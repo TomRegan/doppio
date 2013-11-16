@@ -1,0 +1,59 @@
+#! /usr/bin/env bash
+# Report files with different extensions in a directory.
+#
+# Copyright 2013 Tom Regan
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+declare -i COUNT
+declare -a EXCLUDES
+NAME=$(basename $0)
+USAGE="USAGE: $NAME [hvx] <ARGUMENTS>"
+HELP="\t-h\tdisplay help\n\t-v\tdisplay version\n\t-x\texclude extension(s)"
+VERSION=1
+
+while getopts ":hvx:" opt; do
+    case $opt in
+	h) echo -e "$USAGE\n$HELP" ; exit 0 ;;
+	v) echo "$NAME version $VERSION"; exit 0 ;;
+	x) EXCLUDES=$OPTARG ;;
+	\?) echo -e "Unrecognised option: -$OPTARG\n$USAGE" ; exit 1 ;;
+    esac
+done
+
+COUNT=0
+for NEXT in *; do
+    [[ -z $LAST ]] && LAST=$NEXT && continue
+    FNOEXT="${NEXT%.*}"
+    FEXT=${NEXT##*.}
+    IS_EXCLD=false
+    for EXCLUDE in ${EXCLUDES[@]}; do
+	[[ ${EXCLUDES[@]/$FEXT} != ${EXCLUDES[@]} ]] && IS_EXCLD=true && break
+    done
+    [[ $IS_EXCLD == true ]] && continue
+    if [[ ${LAST%.*} == $FNOEXT ]]; then
+	echo $NEXT is a duplicate of $LAST; COUNT+=1
+    else
+	LAST=$NEXT
+    fi
+done
+[[ $COUNT -eq 0 ]] && (
+    echo "$NAME: no duplicates found" 
+)||(
+    echo -n "$NAME: found $COUNT duplicate" && [[ $COUNT -gt 1 ]] && (
+	echo "s" 
+    )||(
+	echo
+    )
+)
