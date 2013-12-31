@@ -15,48 +15,97 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 declare -i COUNT
 declare -a EXCLUDES
-NAME=$(basename $0)
-USAGE="USAGE: $NAME [hvx] <ARGUMENTS>"
-HELP="\t-h\tdisplay help\n\t-v\tdisplay version\n\t-x\texclude extension(s)"
-VERSION=1
-
-while getopts ":hvx:" opt; do
-    case $opt in
-	h) echo -e "$USAGE\n$HELP" ; exit 0 ;;
-	v) echo "$NAME version $VERSION"; exit 0 ;;
-	x) EXCLUDES=$OPTARG ;;
-	\?) echo -e "Unrecognised option: -$OPTARG\n$USAGE" ; exit 1 ;;
-    esac
-done
-
+declare -A HASHES
+declare -A HASH_COUNT
+NAME=doppio
+USAGE="usage: $NAME [-hvsx]"
+HELP="\t-h\tdisplay help\n\t-v\tdisplay version\n\t-s\tcompare files using a fast hashing algorithm\n\t-x\texclude extension(s)"
+VERSION=2
+SHA=shasum
 COUNT=0
-for NEXT in *; do
-    [[ -z $LAST ]] && { LAST=$NEXT; continue; }
-    FNOEXT="${NEXT%.*}"
-    FEXT=${NEXT##*.}
-    IS_EXCLD=false
+
+
+# checks a file does not match an exclude
+# 1: filename
+# returns 0 if the file matches or 1
+_exclude() {
     for EXCLUDE in ${EXCLUDES[@]}; do
-	[[ ${EXCLUDES[@]/$FEXT} != ${EXCLUDES[@]} ]] && {
-	    IS_EXCLD=true; break
+	[[ ${EXCLUDES[@]/${1##*.}} != ${EXCLUDES[@]} ]] && {
+	    return 0
 	}
     done
-    [[ $IS_EXCLD == true ]] && continue
-    [[ ${LAST%.*} == $FNOEXT ]] && {
-	echo $NEXT is a duplicate of $LAST; COUNT+=1
-    } || {
-	LAST=$NEXT
+    return 1
+}
+
+_quick_sha() {
+    echo $(head -c 128 $1 | $SHA | cut -d ' ' -f 1)
+}
+
+# matches files based on a comparison of their sha1 hash
+_sha_match() {
+    [[ ${#HASHES[@]} == 0 ]] && {
+	for next in *; do
+	    if _exclude $next; then continue; fi
+	    local key=$(_quick_sha $next)
+	    HASHES[$key]+="$next "
+	    HASH_COUNT[$key]=$(( ${HASH_COUNT[$key]} + 1 ))
+	done
+	for key in ${!HASHES[@]}; do
+	    local count=${HASH_COUNT[$key]}
+	    [[ $count  -gt 1 ]] && {
+		echo ${key:0:7} ${HASHES[$key]}	
+		COUNT=$(( COUNT + count - 1 ))
+	    }
+	done
     }
-done
-[[ $COUNT -eq 0 ]] && {
-    echo "$NAME: no duplicates found" 
-}||{
-    echo -n "$NAME: found $COUNT duplicate"
-    [[ $COUNT -gt 1 ]] && {
-	echo "s" 
+}
+
+_quick_name_compare() {
+    [[ ${1%.*} == ${2%.*} ]] && return 0
+    return 1
+}
+
+# matches files based on the name preceding their extension
+_fast_match() {
+    for next in *; do
+	[[ -z $last ]] && { last=$next; continue; }
+	if _exclude $next; then continue; fi
+	if _quick_name_compare $last $next; then
+	    echo $next is a duplicate of $last; COUNT+=1
+	else
+	    last=$next
+	fi
+    done
+}
+
+main() {
+    local searched=0
+    while getopts ":shvx:" opt; do
+	case $opt in
+	    h) echo -e "$USAGE\n$HELP" ; exit 0 ;;
+	    v) echo "$NAME version $VERSION"; exit 0 ;;
+	    s) _sha_match; searched=1 ;;
+	    x) EXCLUDES=$OPTARG ;;
+	    \?) echo -e "illegal option -$OPTARG\n$USAGE" ; exit 1 ;;
+	esac
+    done
+    [[ $searched == 0 ]] && {
+	_fast_match
+    }
+    [[ $COUNT -eq 0 ]] && {
+	echo "$NAME: no duplicates found"
     }||{
-	echo
+	echo -n "$NAME: found $COUNT duplicate"
+	[[ $COUNT -gt 1 ]] && {
+	    echo "s"
+	}||{
+	    echo
+	}
     }
+}
+
+[[ $0 == $NAME ]] && {
+    main "$@"
 }
